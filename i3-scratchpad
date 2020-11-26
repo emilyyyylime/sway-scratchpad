@@ -221,9 +221,9 @@ show_window_in_position() {
 	x_end=$x_pos
 	y_end=$y_pos
 	case "$move" in
-		t) y=$((offset_y - height));            y_inc=$(((y_pos - y) / 4));;
+		t) y=$((offset_y - height + 1));        y_inc=$(((y_pos - y) / 4));;
 		b) y=$((offset_y + screen_height - 1)); y_inc=$(((y_pos - y) / 4));;
-		l) x=$((offset_x - width));             x_inc=$(((x_pos - x) / 4));;
+		l) x=$((offset_x - width + 1));         x_inc=$(((x_pos - x) / 4));;
 		r) x=$((offset_x + screen_width - 1));  x_inc=$(((x_pos - x) / 4));;
 	esac
 	i3-msg -q -- "[id=\"$window_id\"] move to scratchpad;[id=\"$window_id\"] scratchpad show;[id=\"$window_id\"] move position $x px $y px;[id=\"$window_id\"] resize set $width px $height px"
