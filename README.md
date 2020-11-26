@@ -77,7 +77,7 @@ Want an Apple Music Player? Sure thing.
 i3-scratchpad -s DP-1  -d900x500 -p0,0 -mr -tatr -- brave --app=https://music.apple.com/hu/browse
 ```
 
-Brave is a Chromium based browser, check your browser's options for a standalone new window run.
+[Brave] is a [Chromium] based browser, check your browser's options for a standalone new window run.
 
 License
 -------
