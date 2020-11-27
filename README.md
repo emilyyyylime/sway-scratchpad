@@ -48,6 +48,10 @@ Example:
  $ i3-scratchpad -d200x200 -abr -p0,-32 -wtu cal
 ```
 
+Installation
+------------
+You can just download the script file. You can also find it at [AUR](https://aur.archlinux.org/packages/i3-scratchpad-git/). (Thanks tami for contribution)
+
 Requirements
 ------------
 Created for [i3wm] in [Bash]. Uses **xrandr** and **wmctrl** for positioning and toggling. [URxvt] or fork is needed for command line wrapper. Bash **sleep** extension is required for animation, the scripts tries to load that automatically. General tools like **sed**, **grep** and **cat** are also used.
@@ -74,7 +78,7 @@ exec = printf '%%{A1:i3-scratchpad -d200x200 -abr -p0,-50 -wtuo +transparent -mb
 #### Browser
 Want an Apple Music Player? Sure thing.
 ```shell
-i3-scratchpad -s DP-1  -d900x500 -p0,0 -mr -tatr -- brave --app=https://music.apple.com/hu/browse
+i3-scratchpad -s DP-1  -d900x500 -p0,0 -mr -tatr -- brave --app=https://music.apple.com/en/browse
 ```
 
 [Brave] is a [Chromium] based browser, check your browser's options for a standalone new window run.
