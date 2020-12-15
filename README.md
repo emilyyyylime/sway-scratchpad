@@ -16,18 +16,12 @@ Features
 Usage
 -----
 ```
-Usage: i3-scratchpad [[-s <screen>] [-a <anchor>] [-d <size>] [-p <pos>]] [-u [-w][-o <opts>]] [-t] [-m <edge>] <command>
+Usage: i3-scratchpad [[-a <anchor>] [-d <size>] [-p <pos>] [-s <screen>]] [-m <edge>] [-t] [-u [-w][-o <opts>]] [-v] [-V] <command>
 Executes a program in a positioned scratchpad, optionally wrapped in a URxvt window.
 Caches optional URxvt wrapper script and stores window id at XDG_RUNTIME_DIR based on command,
 so executing the same command will re-use the existing window, if it still exists.
 
 Arguments:
- -h            Prints this help page.
- -s <screen>   Screen identifier, as listed in xrandr. Falls back to primary screen.
- -d <size>     Dimensions of window in pixels, in WIDTHxHEIGHT format.
-               Percentages of the screen dimensions can be used as well. Default is 50%x50%
- -p <pos>      Position of terminal on pixels, in X,Y format.
-               Negative values can be used as well. Default is 0,0
  -a <anchor>   Sets where to calculate position from. Valid values are
                top-left, top-center, top-right
                center-left, center-center, center-right
@@ -35,13 +29,21 @@ Arguments:
                Can be shortened as: tl, tc, tr, cl, cc, cr, bl, bc, br
                Position will be calculated from anchor point of screen to anchor
                point of window. Default is center-center.
+ -d <size>     Dimensions of window in pixels, in WIDTHxHEIGHT format.
+               Percentages of the screen dimensions can be used as well. Default is 50%x50%
+ -h            Prints this help page.
  -m <edge>     Animates the movement to target position from specified edge.
                Valid values are top, left, bottom, right, or short t, l, b, r
- -u            Use URxvt terminal to launch the command - for command line apps.
  -o <opts>     Extra URxvt options to pass.
+ -p <pos>      Position of terminal on pixels, in X,Y format.
+               Negative values can be used as well. Default is 0,0
+ -s <screen>   Screen identifier, as listed in xrandr. Falls back to primary screen.
+ -t            Toggles the window.
+ -u            Use URxvt terminal to launch the command - for command line apps.
+ -v            Verbose, for debugging.
+ -V            Print version information.
  -w            Hides the cursor and waits for keypress before closing the
                terminal window. Useful for commands immediately returning.
- -t            Toggles the window.
 
 Example:
  # Calendar at the bottom right of primary screen with 32px bottom margin:
