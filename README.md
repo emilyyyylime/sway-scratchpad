@@ -54,7 +54,7 @@ You can just download the script file. You can also find it at [AUR](https://aur
 
 Requirements
 ------------
-Created for [i3wm] in [Bash]. Uses **xrandr** and **wmctrl** for positioning and toggling. [URxvt] or fork is needed for command line wrapper. Bash **sleep** extension is required for animation, the scripts tries to load that automatically. General tools like **sed**, **grep** and **cat** are also used.
+Created for [i3wm] in [Bash]. Uses **xrandr** and **wmctrl** for positioning and toggling, **xdotool** for getting pids. [URxvt] or fork is needed for command line wrapper. Bash **sleep** extension is required for animation, the scripts tries to load that automatically. General tools like **sed**, **grep**, **md5sum** and **cat** are also used.
 
 Examples
 --------
