@@ -25,18 +25,14 @@
 
 # For more information, please refer to <http://unlicense.org/>
 
+VERSION="1.1"
+
 print_help() {
-	printf 'Usage: %s [[-s <screen>] [-a <anchor>] [-d <size>] [-p <pos>]] [-u [-w][-o <opts>]] [-t] [-m <edge>] <command>\n' "$script_name"
+	printf 'Usage: %s [[-a <anchor>] [-d <size>] [-p <pos>] [-s <screen>]] [-m <edge>] [-t] [-u [-w][-o <opts>]] [-v] [-V] <command>\n' "$script_name"
 	printf 'Executes a program in a positioned scratchpad, optionally wrapped in a URxvt window.\n'
 	printf 'Caches optional URxvt wrapper script and stores window id at XDG_RUNTIME_DIR based on command,\n'
 	printf 'so executing the same command will re-use the existing window, if it still exists.\n'
 	printf '\nArguments:\n'
-	printf ' -h            Prints this help page.\n'
-	printf ' -s <screen>   Screen identifier, as listed in xrandr. Falls back to primary screen.\n'
-	printf ' -d <size>     Dimensions of window in pixels, in WIDTHxHEIGHT format.\n'
-	printf '               Percentages of the screen dimensions can be used as well. Default is 50%%x50%%\n'
-	printf ' -p <pos>      Position of terminal on pixels, in X,Y format.\n'
-	printf '               Negative values can be used as well. Default is 0,0\n'
 	printf ' -a <anchor>   Sets where to calculate position from. Valid values are\n'
 	printf '               top-left, top-center, top-right\n'
 	printf '               center-left, center-center, center-right\n'
@@ -44,13 +40,21 @@ print_help() {
 	printf '               Can be shortened as: tl, tc, tr, cl, cc, cr, bl, bc, br\n'
 	printf '               Position will be calculated from anchor point of screen to anchor\n'
 	printf '               point of window. Default is center-center.\n'
+	printf ' -d <size>     Dimensions of window in pixels, in WIDTHxHEIGHT format.\n'
+	printf '               Percentages of the screen dimensions can be used as well. Default is 50%%x50%%\n'
+	printf ' -h            Prints this help page.\n'
 	printf ' -m <edge>     Animates the movement to target position from specified edge.\n'
 	printf '               Valid values are top, left, bottom, right, or short t, l, b, r\n'
-	printf ' -u            Use URxvt terminal to launch the command - for command line apps.\n'
 	printf ' -o <opts>     Extra URxvt options to pass.\n'
+	printf ' -p <pos>      Position of terminal on pixels, in X,Y format.\n'
+	printf '               Negative values can be used as well. Default is 0,0\n'
+	printf ' -s <screen>   Screen identifier, as listed in xrandr. Falls back to primary screen.\n'
+	printf ' -t            Toggles the window.\n'
+	printf ' -u            Use URxvt terminal to launch the command - for command line apps.\n'
+	printf ' -v            Verbose, for debugging.\n'
+	printf ' -V            Print version information.\n'
 	printf ' -w            Hides the cursor and waits for keypress before closing the\n'
 	printf '               terminal window. Useful for commands immediately returning.\n'
-	printf ' -t            Toggles the window.\n'
 	printf '\nExample:\n'
 	printf ' # Calendar at the bottom right of primary screen with 32px bottom margin:\n'
 	printf ' $ %s -d200x200 -abr -p0,-32 -wtu cal\n' "$script_name"
@@ -75,19 +79,20 @@ main() {
 parse_aruments() {
 	local script_name dim='\([0-9]\+%\?\)' pos='\(-\?[0-9]\+\)' anchor='cc'
 	script_name="$(basename "$0")"
-	while getopts hs:d:p:wo:ta:uvm: arg; do
+	while getopts a:d:hm:o:p:s:tuvVw arg; do
 		case $arg in
-			h) print_help; exit 0;;
-			s) screen="$OPTARG";;
-			d) read -r width height < <(sed -n "s/^${dim}x${dim}$/\1 \2/p" <<< "$OPTARG");;
-			p) read -r x_pos y_pos < <(sed -n "s/^${pos},${pos}$/\1 \2/p" <<< "$OPTARG");;
-			w) wait=true;;
-			o) urxvt_opts="$OPTARG";;
-			t) toggle=true;;
 			a) anchor="$OPTARG";;
+			d) read -r width height < <(sed -n "s/^${dim}x${dim}$/\1 \2/p" <<< "$OPTARG");;
+			h) print_help; exit 0;;
+			m) move="$OPTARG";;
+			o) urxvt_opts="$OPTARG";;
+			p) read -r x_pos y_pos < <(sed -n "s/^${pos},${pos}$/\1 \2/p" <<< "$OPTARG");;
+			s) screen="$OPTARG";;
+			t) toggle=true;;
 			u) urxvt=true;;
 			v) verbose=true;;
-			m) move="$OPTARG";;
+			V) printf 'Version %s\n' "$VERSION"; exit 0;;
+			w) wait=true;;
 			*) print_help; exit 1;;
 		esac
 	done
