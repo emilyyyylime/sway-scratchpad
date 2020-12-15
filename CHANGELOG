@@ -1,5 +1,5 @@
-Version 1.1
-===========
+Version 1.1 (2020-12-15)
+========================
 
 - New dependency: xdotool
 - Fixed an issue where other windows moved to scratchpad in case they got a previously used window id
@@ -8,3 +8,7 @@ Version 1.1
 - Organized help to show arguments in alphabetical order
 - Fixed an issue where wrapper file could fail if path to wrapper file contained whitespaces
 
+Version 1.0 (2020-11-26)
+========================
+
+Initial Release
