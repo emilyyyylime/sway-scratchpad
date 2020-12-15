@@ -69,7 +69,7 @@ main() {
 		exit 0
 	fi
 
-	start_and_save_wid
+	start_and_save_wid_and_pid
 }
 
 parse_aruments() {
@@ -162,13 +162,25 @@ parse_dimensions() {
 }
 
 already_running() {
-	local window_id window_state
+	local window_id window_state pid window_pid
 	debug 'Checking wid file' "$wid_file"
-	window_id="$(cat "$wid_file" 2>/dev/null)"
+	if [ -f "$wid_file" ] && [ -r "$wid_file" ]; then
+		read -r window_id pid < "$wid_file"
+	fi
 	if [ -n "$window_id" ]; then
 		debug 'Last window id was' "$window_id"
 		if [ "$(wmctrl -l | grep -c "^$window_id ")" -gt 0 ]; then
 			debug 'Window still exist'
+			if [ -n "$pid" ]; then
+				window_pid=$(xdotool getwindowpid "$window_id")
+				debug 'Pid of window is' "$window_pid"
+				if [ "$pid" -ne "$window_pid" ]; then
+					debug 'PID does not match, window id reused?'
+					return 1
+				fi
+			else
+				debug 'Last pid not found'
+			fi
 			if [ -n "$toggle" ]; then
 					window_state=$(xprop -id "$window_id" | sed -n 's/^.*window state: \(.*\)$/\1/p')
 					debug 'Toggle mode on, current window state is' "$window_state"
@@ -185,8 +197,8 @@ already_running() {
 	return 1
 }
 
-start_and_save_wid() {
-	local window_id
+start_and_save_wid_and_pid() {
+	local window_id pid
 
 	if [ -n "$urxvt" ]; then
 		create_urxvt_wrapper
@@ -194,15 +206,22 @@ start_and_save_wid() {
 
 	debug 'Launching command' "$command"
 	window_id=$(printf '0x%08x\n' "$(i3-msg -q "exec --no-startup-id \"$command\"" && i3-msg -t subscribe '[ "window" ]' | sed -n 's/.*"window":\([0-9]\+\).*/\1/p')")
-
 	if [ -z "$window_id" ]; then
 		printf 'Can not find window with id %s\n' "$window_id" >&2
 		rm -f "$wid_file"
 		return 1
 	fi
 
-	debug 'Saving window_id' "$window_id" 'to wid file' "$wid_file"
-	printf '%s\n' "$window_id" > "$wid_file"
+	pid="$(xdotool getwindowpid "$window_id")"
+	if [ -z "$pid" ]; then
+		printf 'Can not find pid for window id %s\n' "$window_id" >&2
+		rm -f "$wid_file"
+		return 1
+	fi
+	debug 'PID of window is' "$pid"
+
+	debug 'Saving window_id' "$window_id" 'and pid' "$pid" 'to wid file' "$wid_file"
+	printf '%s %s\n' "$window_id" "$pid" > "$wid_file"
 
 	show_window_in_position
 }
@@ -278,8 +297,9 @@ animate() {
 }
 
 create_urxvt_wrapper() {
-		local wrapper_file="$wid_file.sh"
-		if [ -f "$wrapper_file" ]; then
+		local wrapper_file
+		wrapper_file="$wid_file$(if [ -n "$wait" ]; then printf '_W'; fi).sh"
+		if [ -f "$wrapper_file" ] && [ -x "$wrapper_file" ]; then
 			debug 'Wrapper' "$wrapper_file" 'file already exists.'
 		else
 			debug 'Creating wrapper file' "$wrapper_file" 'with URxvt command wrapper'
