@@ -295,7 +295,7 @@ create_urxvt_wrapper() {
 				cat "$wrapper_file"
 			fi
 		fi
-		command="urxvt $urxvt_opts -e $wrapper_file"
+		command="urxvt $urxvt_opts -e '$wrapper_file'"
 }
 
 debug() {
