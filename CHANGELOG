@@ -7,6 +7,7 @@ Version 1.1 (2020-12-15)
 - Added -V (Version) option
 - Organized help to show arguments in alphabetical order
 - Fixed an issue where wrapper file could fail if path to wrapper file contained whitespaces
+- Fixed an issue where the same wrapper file is used for running with wait and without wait
 
 Version 1.0 (2020-11-26)
 ========================
