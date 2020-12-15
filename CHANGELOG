@@ -1,0 +1,10 @@
+Version 1.1
+===========
+
+- New dependency: xdotool
+- Fixed an issue where other windows moved to scratchpad in case they got a previously used window id
+- Added missing -v (Verbose) option to help
+- Added -V (Version) option
+- Organized help to show arguments in alphabetical order
+- Fixed an issue where wrapper file could fail if path to wrapper file contained whitespaces
+
