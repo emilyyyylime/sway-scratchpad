@@ -63,9 +63,7 @@ print_help() {
 main() {
 	local screen_width screen_height offset_x offset_y width height x_pos y_pos \
 	      urxvt move wait command urxvt_opts toggle verbose \
-	      wid_file pid_dir animation_frame_delay=0.01
-
-	pid_dir=${XDG_RUNTIME_DIR:-"/tmp"}
+	      wid_file animation_frame_delay=0.01
 
 	parse_aruments "$@"
 
@@ -73,7 +71,7 @@ main() {
 		exit 0
 	fi
 
-	start_and_save_wid_and_pid
+	start_and_mark_window
 }
 
 parse_aruments() {
@@ -102,7 +100,8 @@ parse_aruments() {
 		printf 'Command argument is missing. See %s -h.\n' "$script_name" >&2
 		exit 1
 	fi
-	wid_file="$pid_dir/i3-sp-$(md5sum <<< "$command" | cut -f1 -d' ')"
+	id_mark="_sway_scratchpad_$(md5sum <<< "$command" | cut -f1 -d' ')"
+	debug "Determined mark as $id_mark"
 
 	if [[ "$anchor" =~ ^(top|center|bottom)-(left|center|right)$ ]]; then
 		anchor=$(sed -n 's/^\([tcb]\)[^-]\+-\([lcr]\).*$/\1\2/p' <<< "$anchor")
@@ -127,22 +126,35 @@ parse_aruments() {
 }
 
 ensure_screen() {
-	if [ -n "$screen" ] && [ "$(xrandr --listactivemonitors | sed -n '2,$s/^.*\s\(\S\+\)$/\1/p' | grep -xc "$screen")" -eq 0 ]; then
+	if [[ "$screen" ]] && ! swaymsg -rt get_outputs | jq -e --arg screen "$screen" '.[] | select(.name == $screen)'; then
+		debug "Given screen value $screen not found in output list"
 		unset screen
 	fi
 
-	if [ -z "$screen" ]; then
-		screen=$(xrandr | sed -n 's/^\(\S\+\).*primary.*$/\1/p')
+	if [[ ! "$screen" ]]; then
+		screen=$(swaymsg -rt get_outputs | jq -r 'first(.[] | select(.focused == true)).name')
+		debug "Setting screen to focused output $screen"
 	fi
 }
 
 parse_dimensions() {
+	local jq_prog dimensions
 	width=${width:-50%}
 	height=${height:-50%}
 	x_pos=${x_pos:-0}
 	y_pos=${y_pos:-0}
 
-	read -r screen_width screen_height offset_x offset_y < <(xrandr | sed -n "s/^$screen .*connected[^0-9]* \([0-9]\+\)x\([0-9]\+\)\([+-][0-9]\+\)\([+-][0-9]\+\).*$/\1 \2 \3 \4/p")
+	# shellcheck disable=SC2016 # Complains about $var in single quotes
+	jq_prog='
+		# Get selected screen
+		first(.[] | select(.name == $screen))
+		# And get its dimensions
+		.rect | {width,height,x,y}[]
+	'
+	dimensions=$(swaymsg -rt get_outputs |
+		jq -e --arg screen "$screen" "$jq_prog" |
+		tr '\n' ' ')
+	read -r screen_width screen_height offset_x offset_y <<< "$dimensions"
 
 	if [[ "$width" =~ %$ ]]; then
 		width=$((screen_width * ${width//%/} / 100))
@@ -167,75 +179,56 @@ parse_dimensions() {
 }
 
 already_running() {
-	local window_id window_state pid window_pid
-	debug 'Checking wid file' "$wid_file"
-	if [ -f "$wid_file" ] && [ -r "$wid_file" ]; then
-		read -r window_id pid < "$wid_file"
+	local jq_prog
+
+	swaymsg -rt get_marks | jq -e --arg id_mark "$id_mark" 'index($id_mark)?' > /dev/null # No --quiet option?
+	[[ $? == 1 ]] && return 1 # No appropriately marked window; short circuit
+
+	if [[ ! $toggle ]]; then
+		show_window_in_position
+		return 0
 	fi
-	if [ -n "$window_id" ]; then
-		debug 'Last window id was' "$window_id"
-		if [ "$(wmctrl -l | grep -c "^$window_id ")" -gt 0 ]; then
-			debug 'Window still exist'
-			if [ -n "$pid" ]; then
-				window_pid=$(xdotool getwindowpid "$window_id")
-				debug 'Pid of window is' "$window_pid"
-				if [ "$pid" -ne "$window_pid" ]; then
-					debug 'PID does not match, window id reused?'
-					return 1
-				fi
-			else
-				debug 'Last pid not found'
-			fi
-			if [ -n "$toggle" ]; then
-					window_state=$(xprop -id "$window_id" | sed -n 's/^.*window state: \(.*\)$/\1/p')
-					debug 'Toggle mode on, current window state is' "$window_state"
-					if [[ "$window_state" != 'Withdrawn' ]]; then
-						debug 'Moving to scratchpad'
-						hide_window
-						return 0
-					fi
-			fi
-			show_window_in_position
-			return 0
-		fi
+
+	# shellcheck disable=SC2016 # Complains about $var in single quotes
+	jq_prog='
+		# Locate the scratchpad workspace
+		first(.. | select(.name == "__i3_scratch" and .precent == null)?)
+		# And recursively search for an appropriately marked window
+		| .. | select(.marks | index($id_mark))?
+	'
+	if swaymsg -rt get_tree | jq -e --arg id_mark "$id_mark" "$jq_prog" > /dev/null; then
+		debug 'Found window in scratchpad'
+		show_window_in_position
+	else
+		debug 'Window was found, but not in scratchpad; moving to scratchpad'
+		hide_window
 	fi
-	return 1
+	return 0
 }
 
-start_and_save_wid_and_pid() {
-	local window_id pid
+start_and_mark_window() {
+	local event change
 
 	if [ -n "$urxvt" ]; then
 		create_urxvt_wrapper
 	fi
 
-	debug 'Launching command' "$command"
-	window_id=$(printf '0x%08x\n' "$(i3-msg -q "exec --no-startup-id \"$command\"" && i3-msg -t subscribe '[ "window" ]' | sed -n 's/.*"window":\([0-9]\+\).*/\1/p')")
-	if [ -z "$window_id" ]; then
-		printf 'Can not find window with id %s\n' "$window_id" >&2
-		rm -f "$wid_file"
+	event=$(swaymsg -q -- exec --no-startup-id "$command" && swaymsg -r -t subscribe '[ "window" ]')
+	change="$(jq '.change' <<< "$event")"
+	if [[ "$change" != '"new"' ]]; then
+		printf 'Got unexpected window event (change = %s, expected "new")\n' "$change" >&2
 		return 1
 	fi
-
-	pid="$(xdotool getwindowpid "$window_id")"
-	if [ -z "$pid" ]; then
-		printf 'Can not find pid for window id %s\n' "$window_id" >&2
-		rm -f "$wid_file"
-		return 1
-	fi
-	debug 'PID of window is' "$pid"
-
-	debug 'Saving window_id' "$window_id" 'and pid' "$pid" 'to wid file' "$wid_file"
-	printf '%s %s\n' "$window_id" "$pid" > "$wid_file"
+	swaymsg "mark --add \"$id_mark\""
+	debug "Marked new window with identifying mark $id_mark"
 
 	show_window_in_position
 }
 
 show_window_in_position() {
-
 	if [ -z "$move" ]; then
 		debug 'Moving to scratchpad, showing and resizing'
-		i3-msg -q -- "[id=\"$window_id\"] move to scratchpad;[id=\"$window_id\"] scratchpad show;[id=\"$window_id\"] move position $x_pos px $y_pos px;[id=\"$window_id\"] resize set $width px $height px"
+		swaymsg -q -- "[con_mark=\"$id_mark\"] move to scratchpad, scratchpad show, move position $x_pos px $y_pos px, resize set $width px $height px"
 		return 0
 	fi
 
@@ -250,13 +243,13 @@ show_window_in_position() {
 		l) x=$((offset_x - width + 1));         x_inc=$(((x_pos - x) / 4));;
 		r) x=$((offset_x + screen_width - 1));  x_inc=$(((x_pos - x) / 4));;
 	esac
-	i3-msg -q -- "[id=\"$window_id\"] move to scratchpad;[id=\"$window_id\"] scratchpad show;[id=\"$window_id\"] move position $x px $y px;[id=\"$window_id\"] resize set $width px $height px"
+	swaymsg -q -- "[con_mark=\"$id_mark\"] move to scratchpad, scratchpad show, move position $x px $y px, resize set $width px $height px"
 	debug 'Starting show animation'
 	while [[ ($x_inc -lt 0 && $x -gt $x_end) || ($x_inc -gt 0 && $x -lt $x_end) || ($y_inc -lt 0 && $y -gt $y_end) || ($y_inc -gt 0 && $y -lt $y_end) ]]; do
 		animate
 	done
 	debug 'Animation completed'
-	i3-msg -q -- "[id=\"$window_id\"] move position $x_pos px $y_pos px"
+	swaymsg -q -- "[con_mark=\"$id_mark\"] move position $x_pos px $y_pos px"
 }
 
 hide_window() {
@@ -280,12 +273,12 @@ hide_window() {
 		debug 'Animation completed'
 	fi
 
-	i3-msg -q -- "[id=\"$window_id\"] move to scratchpad;"
+	swaymsg -q -- "[con_mark=\"$id_mark\"] move to scratchpad"
 }
 
 animate() {
 	debug 'Moving to [' "$x" "$y" '] with increment [' "$x_inc" "$y_inc" ']'
-	i3-msg -q -- "[id=\"$window_id\"] move position $x px $y px"
+	swaymsg -q -- "[con_mark=\"$id_mark\"] move position $x px $y px"
 	y=$((y + y_inc))
 	x=$((x + x_inc))
 	if [[ ($x -lt $x_pos && $x_inc -le 0) || ($x -gt $x_pos && $x_inc -ge 0) ]]; then
@@ -333,4 +326,3 @@ debug() {
 enable -f sleep sleep
 
 main "$@"
-
