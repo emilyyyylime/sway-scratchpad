@@ -28,44 +28,36 @@
 VERSION="1.1"
 
 print_help() {
-	printf 'Usage: %s [[-a <anchor>] [-d <size>] [-p <pos>] [-s <screen>]] [-m <edge>] [-t] [-u [-w][-o <opts>]] [-v] [-V] <command>\n' "$script_name"
-	printf 'Executes a program in a positioned scratchpad, optionally wrapped in a URxvt window.\n'
-	printf 'Caches optional URxvt wrapper script and stores window id at XDG_RUNTIME_DIR based on command,\n'
-	printf 'so executing the same command will re-use the existing window, if it still exists.\n'
+	printf 'Usage: %s [-a <anchor>] [-d <size>] [-p <pos>] [-s <screen>] [-m <edge>] [-w <wm>] [-h] [-t] [-v] [-V] <command>\n' "$script_name"
+	printf 'Executes a program in a positioned scratchpad window.\n'
+	printf 'Marks windows for the command arguments, so executing the same command will re-use the existing window, if it still exists.\n'
 	printf '\nArguments:\n'
-	printf ' -a <anchor>   Sets where to calculate position from. Valid values are\n'
-	printf '               top-left, top-center, top-right\n'
-	printf '               center-left, center-center, center-right\n'
-	printf '               bottom-left, bottom-center, bottom-right\n'
-	printf '               Can be shortened as: tl, tc, tr, cl, cc, cr, bl, bc, br\n'
-	printf '               Position will be calculated from anchor point of screen to anchor\n'
-	printf '               point of window. Default is center-center.\n'
+	printf ' -a <anchor>   Sets where to calculate position from. Valid values are combinations of {top,centre,bottom} and\n'
+	printf '               {left,centre,right}, seperated by "-". (Example: centre-right).\n'
+	printf '               Can be shortened as: tl, tr, etc.\n'
+	printf '               Position will then be calculated from the anchor point on the screen to that same anchor\n'
+	printf '               point on the window. Default is centre-centre.\n'
 	printf ' -d <size>     Dimensions of window in pixels, in WIDTHxHEIGHT format.\n'
 	printf '               Percentages of the screen dimensions can be used as well. Default is 50%%x50%%\n'
 	printf ' -h            Prints this help page.\n'
 	printf ' -m <edge>     Animates the movement to target position from specified edge.\n'
-	printf '               Valid values are top, left, bottom, right, or short t, l, b, r\n'
-	printf ' -o <opts>     Extra URxvt options to pass.\n'
-	printf ' -p <pos>      Position of terminal on pixels, in X,Y format.\n'
-	printf '               Negative values can be used as well. Default is 0,0\n'
-	printf ' -s <screen>   Screen identifier, as listed in xrandr. Falls back to primary screen.\n'
+	printf '               Valid values are top, left, bottom, right / t, l, b, r.\n'
+	printf ' -p <pos>      Position of window on pixels, in X,Y format.\n'
+	printf '               Negative values can be used as well. Default is 0,0.\n'
+	printf ' -s <screen>   Screen identifier, as listed in xrandr. Falls back to focused screen (sway) or primary screen (i3).\n'
 	printf ' -t            Toggles the window.\n'
-	printf ' -u            Use URxvt terminal to launch the command - for command line apps.\n'
 	printf ' -v            Verbose, for debugging.\n'
 	printf ' -V            Print version information.\n'
-	printf ' -w            Hides the cursor and waits for keypress before closing the\n'
-	printf '               terminal window. Useful for commands immediately returning.\n'
-	printf '\nExample:\n'
-	printf ' # Calendar at the bottom right of primary screen with 32px bottom margin:\n'
-	printf ' $ %s -d200x200 -abr -p0,-32 -wtu cal\n' "$script_name"
+	printf ' -w [sway|i3]  Which window manager to use.\n'
+	printf ' <command>     Command to execute in order to open window, if it doesn%ct exist.\n' \'
+#	printf '\nExample:\n'
+#	printf ' # Calendar at the bottom right of primary screen with 32px bottom margin:\n'
+#	printf ' $ %s -d200x200 -abr -p0,-32 -wt calendar\n' "$script_name"
 }
 
 main() {
 	local screen_width screen_height offset_x offset_y width height x_pos y_pos \
-	      urxvt move wait command urxvt_opts toggle verbose \
-	      wid_file pid_dir animation_frame_delay=0.01
-
-	pid_dir=${XDG_RUNTIME_DIR:-"/tmp"}
+	      move command toggle verbose animation_frame_delay=0.01 wm
 
 	parse_aruments "$@"
 
@@ -73,37 +65,43 @@ main() {
 		exit 0
 	fi
 
-	start_and_save_wid_and_pid
+	start_and_mark_window
 }
 
 parse_aruments() {
 	local script_name dim='\([0-9]\+%\?\)' pos='\(-\?[0-9]\+\)' anchor='cc'
 	script_name="$(basename "$0")"
-	while getopts a:d:hm:o:p:s:tuvVw arg; do
+	while getopts a:d:hm:p:s:tvVw arg; do
 		case $arg in
 			a) anchor="$OPTARG";;
 			d) read -r width height < <(sed -n "s/^${dim}x${dim}$/\1 \2/p" <<< "$OPTARG");;
 			h) print_help; exit 0;;
 			m) move="$OPTARG";;
-			o) urxvt_opts="$OPTARG";;
 			p) read -r x_pos y_pos < <(sed -n "s/^${pos},${pos}$/\1 \2/p" <<< "$OPTARG");;
 			s) screen="$OPTARG";;
 			t) toggle=true;;
-			u) urxvt=true;;
 			v) verbose=true;;
 			V) printf 'Version %s\n' "$VERSION"; exit 0;;
-			w) wait=true;;
+			w) wm="$OPTARG";;
 			*) print_help; exit 1;;
 		esac
 	done
 	shift $((OPTIND - 1))
 	command="$*"
-	if [ -z "$command" ]; then
+	if [[ ! "$command" ]]; then
 		printf 'Command argument is missing. See %s -h.\n' "$script_name" >&2
 		exit 1
 	fi
-	wid_file="$pid_dir/i3-sp-$(md5sum <<< "$command" | cut -f1 -d' ')"
+	id_mark="_sway_scratchpad_$(md5sum <<< "$command" | cut -f1 -d' ')"
+	debug "Determined mark as $id_mark"
 
+	ensure_anchors
+	ensure_wm
+	ensure_screen
+	parse_dimensions
+}
+
+ensure_anchors() {
 	if [[ "$anchor" =~ ^(top|center|bottom)-(left|center|right)$ ]]; then
 		anchor=$(sed -n 's/^\([tcb]\)[^-]\+-\([lcr]\).*$/\1\2/p' <<< "$anchor")
 	fi
@@ -121,28 +119,84 @@ parse_aruments() {
 		printf 'Move "%s" is invalid. See %s -h.\n' "$move" "$script_name" >&2
 		exit 1
 	fi
+}
 
-	ensure_screen
-	parse_dimensions
+ensure_wm() {
+	local has_swaymsg=no has_i3msg=no sway_running=no i3_running=no
+	case "${wm,,}" in # Make lowercase
+		'') ;; # Continue below
+		*sway*) wm=sway;;
+		*i3*) wm=i3;;
+		*)
+			printf "Couldn't recognzise wm value \"%s\"; expected sway or i3" "$wm" >&2
+			exit 1 ;;
+	esac
+
+	which swaymsg &> /dev/null && has_swaymsg=yes
+	which i3-msg  &> /dev/null && has_i3msg=yes
+
+	case $has_swaymsg,$has_i3msg in
+		no,no)
+			printf "Neither swaymsg nor i3-msg found in \$PATH. Can't continue." >&2
+			exit 1 ;;
+		yes,no) wm=sway; return ;;
+		no,yes) wm=i3; return ;;
+	esac
+	debug "Both sway and i3 are installed, trying to determine which one is running."
+
+	if [[ ! "$SWAYSOCK" && "$I3SOCK" ]] || ! swaymsg -q; then
+		wm=i3
+		return
+	fi
+
+	pgrep -x 'sway' &> /dev/null && sway_running=yes
+	pgrep -x 'i3'   &> /dev/null && i3_running=yes
+
+	case $sway_running,$i3_running in
+		no,no)
+			printf "Neither sway nor i3 are running. Can't continue." >&2
+			exit 1 ;;
+		yes,no) wm=sway; return ;;
+		no,yes) wm=i3; return ;;
+	esac
+
+	debug 'Both sway and i3 are running. Defaulting to sway.'
+	wm=sway
 }
 
 ensure_screen() {
-	if [ -n "$screen" ] && [ "$(xrandr --listactivemonitors | sed -n '2,$s/^.*\s\(\S\+\)$/\1/p' | grep -xc "$screen")" -eq 0 ]; then
+	local jq_prog
+	if [[ "$screen" ]] && ! wm_msg -rt get_outputs | jq -e --arg screen "$screen" '.[] | select(.name == $screen)'; then
+		debug "Given screen value $screen not found in output list"
 		unset screen
 	fi
 
-	if [ -z "$screen" ]; then
-		screen=$(xrandr | sed -n 's/^\(\S\+\).*primary.*$/\1/p')
+	if [[ ! "$screen" ]]; then
+		jq_prog='
+			   first(.[] | select(.focused == true)).name # Sway exposes a focused field
+			// first(.[] | select(.primary == true)).name # Else fallback to primary output
+		'
+		screen=$(wm_msg -rt get_outputs | jq -r "$jq_prog")
+		debug "Setting screen to focused output $screen"
 	fi
 }
 
 parse_dimensions() {
+	local jq_prog dimensions
 	width=${width:-50%}
 	height=${height:-50%}
 	x_pos=${x_pos:-0}
 	y_pos=${y_pos:-0}
 
-	read -r screen_width screen_height offset_x offset_y < <(xrandr | sed -n "s/^$screen .*connected[^0-9]* \([0-9]\+\)x\([0-9]\+\)\([+-][0-9]\+\)\([+-][0-9]\+\).*$/\1 \2 \3 \4/p")
+	# shellcheck disable=SC2016 # Complains about $var in single quotes
+	jq_prog='
+		# Locate selected screen
+		first(.[] | select(.name == $screen))
+		# And get its dimensions
+		.rect | {width,height,x,y} | values | join(" ")
+	'
+	dimensions=$(wm_msg -rt get_outputs | jq -r --arg screen "$screen" "$jq_prog")
+	read -r screen_width screen_height offset_x offset_y <<< "$dimensions"
 
 	if [[ "$width" =~ %$ ]]; then
 		width=$((screen_width * ${width//%/} / 100))
@@ -167,75 +221,55 @@ parse_dimensions() {
 }
 
 already_running() {
-	local window_id window_state pid window_pid
-	debug 'Checking wid file' "$wid_file"
-	if [ -f "$wid_file" ] && [ -r "$wid_file" ]; then
-		read -r window_id pid < "$wid_file"
+	local jq_prog
+
+	wm_msg -rt get_marks | jq -e --arg id_mark "$id_mark" 'index($id_mark)?' > /dev/null # No --quiet option?
+	[[ $? == 1 ]] && return 1 # No appropriately marked window; short circuit
+
+	if [[ ! $toggle ]]; then
+		show_window_in_position
+		return 0
 	fi
-	if [ -n "$window_id" ]; then
-		debug 'Last window id was' "$window_id"
-		if [ "$(wmctrl -l | grep -c "^$window_id ")" -gt 0 ]; then
-			debug 'Window still exist'
-			if [ -n "$pid" ]; then
-				window_pid=$(xdotool getwindowpid "$window_id")
-				debug 'Pid of window is' "$window_pid"
-				if [ "$pid" -ne "$window_pid" ]; then
-					debug 'PID does not match, window id reused?'
-					return 1
-				fi
-			else
-				debug 'Last pid not found'
-			fi
-			if [ -n "$toggle" ]; then
-					window_state=$(xprop -id "$window_id" | sed -n 's/^.*window state: \(.*\)$/\1/p')
-					debug 'Toggle mode on, current window state is' "$window_state"
-					if [[ "$window_state" != 'Withdrawn' ]]; then
-						debug 'Moving to scratchpad'
-						hide_window
-						return 0
-					fi
-			fi
-			show_window_in_position
-			return 0
-		fi
+
+	# shellcheck disable=SC2016 # Complains about $var in single quotes
+	jq_prog='
+		# It seems in Sway theres no good way to isolate the scratchpad workspace, I believe this should be infallible
+		# Locate __i3 output
+		first(.nodes[] | select(.name == "__i3" and .type == "output")
+		# Determine scratchpad workspace using special values it has (null on Sway, "__i3" on i3)
+		| recurse(.nodes[]) | select(.name == "__i3_scratch" and (.output == null or .output == "__i3" ))?)
+		# And recursively search it for an appropriately marked window
+		| .. | select(.marks | index($id_mark))?
+	'
+	if wm_msg -rt get_tree | jq -e --arg id_mark "$id_mark" "$jq_prog" > /dev/null; then
+		debug 'Found window in scratchpad'
+		show_window_in_position
+	else
+		debug 'Window was found, but not in scratchpad; moving to scratchpad'
+		hide_window
 	fi
-	return 1
+	return 0
 }
 
-start_and_save_wid_and_pid() {
-	local window_id pid
+start_and_mark_window() {
+	local event change
 
-	if [ -n "$urxvt" ]; then
-		create_urxvt_wrapper
-	fi
-
-	debug 'Launching command' "$command"
-	window_id=$(printf '0x%08x\n' "$(i3-msg -q "exec --no-startup-id \"$command\"" && i3-msg -t subscribe '[ "window" ]' | sed -n 's/.*"window":\([0-9]\+\).*/\1/p')")
-	if [ -z "$window_id" ]; then
-		printf 'Can not find window with id %s\n' "$window_id" >&2
-		rm -f "$wid_file"
+	event=$(wm_msg -q -- exec --no-startup-id "$command" && wm_msg -r -t subscribe '[ "window" ]')
+	change="$(jq '.change' <<< "$event")"
+	if [[ "$change" != '"new"' && "$change" != '"focus"' ]]; then
+		printf 'Got unexpected window event (change = %s, expected "new" or "focus")\n' "$change" >&2
 		return 1
 	fi
-
-	pid="$(xdotool getwindowpid "$window_id")"
-	if [ -z "$pid" ]; then
-		printf 'Can not find pid for window id %s\n' "$window_id" >&2
-		rm -f "$wid_file"
-		return 1
-	fi
-	debug 'PID of window is' "$pid"
-
-	debug 'Saving window_id' "$window_id" 'and pid' "$pid" 'to wid file' "$wid_file"
-	printf '%s %s\n' "$window_id" "$pid" > "$wid_file"
+	wm_msg -q "mark --add \"$id_mark\""
+	debug "Marked new window with identifying mark $id_mark"
 
 	show_window_in_position
 }
 
 show_window_in_position() {
-
-	if [ -z "$move" ]; then
+	if [[ ! "$move" ]]; then
 		debug 'Moving to scratchpad, showing and resizing'
-		i3-msg -q -- "[id=\"$window_id\"] move to scratchpad;[id=\"$window_id\"] scratchpad show;[id=\"$window_id\"] move position $x_pos px $y_pos px;[id=\"$window_id\"] resize set $width px $height px"
+		wm_msg -q -- "[con_mark=\"$id_mark\"] move to scratchpad, scratchpad show, move position $x_pos px $y_pos px, resize set $width px $height px"
 		return 0
 	fi
 
@@ -250,18 +284,18 @@ show_window_in_position() {
 		l) x=$((offset_x - width + 1));         x_inc=$(((x_pos - x) / 4));;
 		r) x=$((offset_x + screen_width - 1));  x_inc=$(((x_pos - x) / 4));;
 	esac
-	i3-msg -q -- "[id=\"$window_id\"] move to scratchpad;[id=\"$window_id\"] scratchpad show;[id=\"$window_id\"] move position $x px $y px;[id=\"$window_id\"] resize set $width px $height px"
+	wm_msg -q -- "[con_mark=\"$id_mark\"] move to scratchpad, scratchpad show, move position $x px $y px, resize set $width px $height px"
 	debug 'Starting show animation'
 	while [[ ($x_inc -lt 0 && $x -gt $x_end) || ($x_inc -gt 0 && $x -lt $x_end) || ($y_inc -lt 0 && $y -gt $y_end) || ($y_inc -gt 0 && $y -lt $y_end) ]]; do
 		animate
 	done
 	debug 'Animation completed'
-	i3-msg -q -- "[id=\"$window_id\"] move position $x_pos px $y_pos px"
+	wm_msg -q -- "[con_mark=\"$id_mark\"] move position $x_pos px $y_pos px"
 }
 
 hide_window() {
-	if [ -n "$move" ]; then
-		[ -z "$BASH_LOADABLES_PATH" ] && BASH_LOADABLES_PATH=$(pkg-config bash --variable=loadablesdir 2>/dev/null)
+	if [[ "$move" ]]; then
+		[[ ! "$BASH_LOADABLES_PATH" ]] && BASH_LOADABLES_PATH=$(pkg-config bash --variable=loadablesdir 2>/dev/null)
 		local x x_inc=0 x_end y y_inc=0 y_end
 		x=$x_pos
 		y=$y_pos
@@ -280,12 +314,12 @@ hide_window() {
 		debug 'Animation completed'
 	fi
 
-	i3-msg -q -- "[id=\"$window_id\"] move to scratchpad;"
+	wm_msg -q -- "[con_mark=\"$id_mark\"] move to scratchpad"
 }
 
 animate() {
 	debug 'Moving to [' "$x" "$y" '] with increment [' "$x_inc" "$y_inc" ']'
-	i3-msg -q -- "[id=\"$window_id\"] move position $x px $y px"
+	wm_msg -q -- "[con_mark=\"$id_mark\"] move position $x px $y px"
 	y=$((y + y_inc))
 	x=$((x + x_inc))
 	if [[ ($x -lt $x_pos && $x_inc -le 0) || ($x -gt $x_pos && $x_inc -ge 0) ]]; then
@@ -301,36 +335,24 @@ animate() {
 	sleep "$animation_frame_delay"
 }
 
-create_urxvt_wrapper() {
-		local wrapper_file
-		wrapper_file="$wid_file$(if [ -n "$wait" ]; then printf '_W'; fi).sh"
-		if [ -f "$wrapper_file" ] && [ -x "$wrapper_file" ]; then
-			debug 'Wrapper' "$wrapper_file" 'file already exists.'
-		else
-			debug 'Creating wrapper file' "$wrapper_file" 'with URxvt command wrapper'
-			printf '#!/bin/bash\n' > "$wrapper_file"
-			printf 'clear\n' >> "$wrapper_file"
-			printf '%s\n' "$command" >> "$wrapper_file"
-			if [ -n "$wait" ]; then
-				printf 'printf "\\e[?25l"\n' >> "$wrapper_file"
-				printf 'read -r -n1\n' >> "$wrapper_file"
-			fi
-			chmod u+x "$wrapper_file"
-			if [ -n "$verbose" ]; then
-				cat "$wrapper_file"
-			fi
-		fi
-		command="urxvt $urxvt_opts -e '$wrapper_file'"
+wm_msg() {
+	if [[ "$wm" =~ sway ]]; then
+		swaymsg "$@"
+	elif [[ "$wm" =~ i3 ]]; then
+		i3-msg "$@"
+	else
+		printf "Impossible state reached; wm=%s" "$wm" >&2
+		exit 1
+	fi
 }
 
 debug() {
-	if [ -n "$verbose" ]; then
+	if [[ "$verbose" ]]; then
 		printf '%s\n' "$*"
 	fi
 }
 
-[ -z "$BASH_LOADABLES_PATH" ] && BASH_LOADABLES_PATH=$(pkg-config bash --variable=loadablesdir 2>/dev/null)
+[[ ! "$BASH_LOADABLES_PATH" ]] && BASH_LOADABLES_PATH=$(pkg-config bash --variable=loadablesdir 2>/dev/null)
 enable -f sleep sleep
 
 main "$@"
-
