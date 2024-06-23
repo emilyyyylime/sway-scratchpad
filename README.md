@@ -44,7 +44,7 @@ Example:
 
 Installation
 ------------
-You can just download the script file and add it to your `$PATH`. You can also find it at [TODO: AUR](#placeholder).
+You can just download the script file and add it to your `$PATH`. You can also find it on the AUR at [sway-scratchpad-git](https://aur.archlinux.org/packages/sway-scratchpad-git).
 
 Requirements
 ------------

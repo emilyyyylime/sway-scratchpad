@@ -225,7 +225,7 @@ already_running() {
 		return 0
 	fi
 
-	focused_workspace=$(wm_msg -rt get_workspaces | jq '.[] | select(.focused == true).id') # UDOCUMENTED: sway-ipc(7) does not document an "id" field
+	focused_workspace=$(wm_msg -rt get_workspaces | jq '.[] | select(.focused == true).id') # UNDOCUMENTED: sway-ipc(7) does not document an "id" field
 	debug 'Determined focused workspace as '"$focused_workspace"
 
 	# shellcheck disable=SC2016 # Complains about $var in single quotes
