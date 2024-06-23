@@ -1,8 +1,8 @@
-i3-scratchpad
+sway-scratchpad
 =============
->The Swiss Army Knife of floating i3 windows
+>Your Swiss Army Knife for toggleable floating windows on Sway or i3
 
-![Sample Gif](https://gitlab.com/aquator/i3-scratchpad/-/raw/master/sample.gif)
+![Sample Gif](raw/master/sample.gif)
 
 Features
 --------
@@ -11,76 +11,61 @@ Features
 - Relative sizing based on screen size
 - Anchor points: set distances relative to screen edges, or center
 - Toggle mode: the same command will hide the window if it is displayed
-- Wraps command line apps to URxvt terminal
 
 Usage
 -----
 ```
-Usage: i3-scratchpad [[-a <anchor>] [-d <size>] [-p <pos>] [-s <screen>]] [-m <edge>] [-t] [-u [-w][-o <opts>]] [-v] [-V] <command>
-Executes a program in a positioned scratchpad, optionally wrapped in a URxvt window.
-Caches optional URxvt wrapper script and stores window id at XDG_RUNTIME_DIR based on command,
-so executing the same command will re-use the existing window, if it still exists.
+Usage: sway-scratchpad [-a <anchor>] [-d <size>] [-p <pos>] [-s <screen>] [-m <edge>] [-w <wm>] [-h] [-t] [-v] [-V] <command>
+Executes a program in a positioned scratchpad window.
+Marks windows for the command arguments, so executing the same command will re-use the existing window, if it still exists.
 
 Arguments:
- -a <anchor>   Sets where to calculate position from. Valid values are
-               top-left, top-center, top-right
-               center-left, center-center, center-right
-               bottom-left, bottom-center, bottom-right
-               Can be shortened as: tl, tc, tr, cl, cc, cr, bl, bc, br
-               Position will be calculated from anchor point of screen to anchor
-               point of window. Default is center-center.
+ -a <anchor>   Sets where to calculate position from. Valid values are combinations of {top,centre,bottom} and
+               {left,centre,right}, separated by "-". (Example: centre-right). Can be shortened as: tl, tr, etc.
+               Position will then be calculated from the anchor point on the screen to that same anchor
+               point on the window. Default is centre-centre.
  -d <size>     Dimensions of window in pixels, in WIDTHxHEIGHT format.
                Percentages of the screen dimensions can be used as well. Default is 50%x50%
  -h            Prints this help page.
  -m <edge>     Animates the movement to target position from specified edge.
-               Valid values are top, left, bottom, right, or short t, l, b, r
- -o <opts>     Extra URxvt options to pass.
- -p <pos>      Position of terminal on pixels, in X,Y format.
-               Negative values can be used as well. Default is 0,0
- -s <screen>   Screen identifier, as listed in xrandr. Falls back to primary screen.
+               Valid values are top, left, bottom, right / t, l, b, r.
+ -p <pos>      Position of window on pixels, in X,Y format. Negative values can be used as well. Default is 0,0.
+ -s <screen>   Screen identifier, as listed in xrandr. Falls back to focused screen (sway) or primary screen (i3).
  -t            Toggles the window.
- -u            Use URxvt terminal to launch the command - for command line apps.
  -v            Verbose, for debugging.
  -V            Print version information.
- -w            Hides the cursor and waits for keypress before closing the
-               terminal window. Useful for commands immediately returning.
+ -w [sway|i3]  Which window manager to use.
+ <command>     Command to execute in order to open window, if it doesn't exist.
 
 Example:
- # Calendar at the bottom right of primary screen with 32px bottom margin:
- $ i3-scratchpad -d200x200 -abr -p0,-32 -wtu cal
+ # Popdown seethrough terminal (kitty)
+ bindsym $mod+Ctrl+Return exec --no-startup-id sway-scratchpad -t -mt -atc -d 60%x60% -- kitty --override background_opacity=0.7
 ```
 
 Installation
 ------------
-You can just download the script file. You can also find it at [AUR](https://aur.archlinux.org/packages/i3-scratchpad-git/). (Thanks tami for contribution)
+You can just download the script file and add it to your `$PATH`. You can also find it at [TODO: AUR](#placeholder).
 
 Requirements
 ------------
-Created for [i3wm] in [Bash]. Uses **xrandr** and **wmctrl** for positioning and toggling, **xdotool** for getting pids. [URxvt] or fork is needed for command line wrapper. Bash **sleep** extension is required for animation, the scripts tries to load that automatically. General tools like **sed**, **grep**, **md5sum** and **cat** are also used.
+Created for [swaywm] in [Bash], but fully supports [i3wm] as well.
+Bash **sleep** extension is required for animation, the script tries to load that automatically.
+General tools like **jq**, **sed**, **md5sum**, **which** and **pgrep** are also used.
 
 Examples
 --------
-#### Terminal + i3
-Create a drop-down terminal with `i3-scratchpad -tmt -atc urxvt +transparent` Use of real transparency is advised for best effect.
-Configuration of i3 to toggle the terminal with $mod+Tab:
+#### Dropdown terminal
+Create a drop-down terminal with `sway-scratchpad -tmt -atc kitty -o background_opacity=0.7`. Use of real transparency is recommended for best effect.
+Configuration of i3/sway to toggle the terminal with $mod+Ctrl+Return:
 ```
 # Toggle dropdown terminal
-bindsym $mod+Tab exec --no-startup-id "i3-scratchpad -tmt -atc urxvt +transparent"
-```
-
-#### Terminal + Polybar
-Fly a calendar into picture with `i3-scratchpad -d200x200 -abr -p0,-50 -wtuo +transparent -mb cal`
-You can hook that up to a polybar date module:
-```ini
-[module/my-calendar]
-type = custom/script
-exec = printf '%%{A1:i3-scratchpad -d200x200 -abr -p0,-50 -wtuo +transparent -mb cal:}%s%%{A}' "$(date +%Y-%m-%d)"
+bindsym $mod+Ctrl+Return exec --no-startup-id "sway-scratchpad -tmt -atc kitty -o background_opacity=0.7"
 ```
 
 #### Browser
 Want an Apple Music Player? Sure thing.
 ```shell
-i3-scratchpad -s DP-1  -d900x500 -p0,0 -mr -tatr -- brave --app=https://music.apple.com/en/browse
+sway-scratchpad -d900x500 -p0,0 -mr -tatr -- brave --app=https://music.apple.com/en/browse
 ```
 
 [Brave] is a [Chromium] based browser, check your browser's options for a standalone new window run.
@@ -113,8 +98,8 @@ OTHER DEALINGS IN THE SOFTWARE.
 For more information, please refer to <http://unlicense.org/>
 
 
+[swaywm]: https://swaywm.org/
 [i3wm]: https://i3wm.org/
 [Bash]: https://www.gnu.org/software/bash/
-[URxvt]: http://software.schmorp.de/pkg/rxvt-unicode.html
 [Brave]: https://brave.com/
 [Chromium]: https://www.chromium.org/

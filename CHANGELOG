@@ -1,3 +1,11 @@
+Version 2.0 (2024-06-23)
+========================
+
+- Added full Sway compatibility
+- Removed all xorg dependencies
+- Switched to recognising windows using marks
+- Removed URxvt integration
+
 Version 1.1 (2020-12-15)
 ========================
 
