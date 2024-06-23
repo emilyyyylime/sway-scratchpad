@@ -25,7 +25,7 @@
 
 # For more information, please refer to <http://unlicense.org/>
 
-VERSION="1.1"
+VERSION="2.0"
 
 print_help() {
 	printf 'Usage: %s [-a <anchor>] [-d <size>] [-p <pos>] [-s <screen>] [-m <edge>] [-w <wm>] [-h] [-t] [-v] [-V] <command>\n' "$script_name"
@@ -33,8 +33,7 @@ print_help() {
 	printf 'Marks windows for the command arguments, so executing the same command will re-use the existing window, if it still exists.\n'
 	printf '\nArguments:\n'
 	printf ' -a <anchor>   Sets where to calculate position from. Valid values are combinations of {top,centre,bottom} and\n'
-	printf '               {left,centre,right}, seperated by "-". (Example: centre-right).\n'
-	printf '               Can be shortened as: tl, tr, etc.\n'
+	printf '               {left,centre,right}, separated by "-". (Example: centre-right). Can be shortened as: tl, tr, etc.\n'
 	printf '               Position will then be calculated from the anchor point on the screen to that same anchor\n'
 	printf '               point on the window. Default is centre-centre.\n'
 	printf ' -d <size>     Dimensions of window in pixels, in WIDTHxHEIGHT format.\n'
@@ -42,35 +41,30 @@ print_help() {
 	printf ' -h            Prints this help page.\n'
 	printf ' -m <edge>     Animates the movement to target position from specified edge.\n'
 	printf '               Valid values are top, left, bottom, right / t, l, b, r.\n'
-	printf ' -p <pos>      Position of window on pixels, in X,Y format.\n'
-	printf '               Negative values can be used as well. Default is 0,0.\n'
+	printf ' -p <pos>      Position of window on pixels, in X,Y format. Negative values can be used as well. Default is 0,0.\n'
 	printf ' -s <screen>   Screen identifier, as listed in xrandr. Falls back to focused screen (sway) or primary screen (i3).\n'
 	printf ' -t            Toggles the window.\n'
 	printf ' -v            Verbose, for debugging.\n'
 	printf ' -V            Print version information.\n'
 	printf ' -w [sway|i3]  Which window manager to use.\n'
 	printf ' <command>     Command to execute in order to open window, if it doesn%ct exist.\n' \'
-#	printf '\nExample:\n'
-#	printf ' # Calendar at the bottom right of primary screen with 32px bottom margin:\n'
-#	printf ' $ %s -d200x200 -abr -p0,-32 -wt calendar\n' "$script_name"
+	printf '\nExample:\n'
+	printf ' # Popdown seethrough terminal (kitty)\n'
+	printf ' bindsym $mod+Ctrl+Return exec --no-startup-id %s -t -mt -atc -d 60%%x60%% -- kitty --override background_opacity=0.7\n' "$script_name"
 }
 
 main() {
 	local screen_width screen_height offset_x offset_y width height x_pos y_pos \
 	      move command toggle verbose animation_frame_delay=0.01 wm
 
-	parse_aruments "$@"
+	parse_arguments "$@"
 
-	if already_running; then
-		exit 0
-	fi
-
-	start_and_mark_window
+	already_running || start_and_mark_window
 }
 
-parse_aruments() {
+parse_arguments() {
 	local script_name dim='\([0-9]\+%\?\)' pos='\(-\?[0-9]\+\)' anchor='cc'
-	script_name="$(basename "$0")"
+	script_name=$(basename "$0")
 	while getopts a:d:hm:p:s:tvVw arg; do
 		case $arg in
 			a) anchor="$OPTARG";;
@@ -166,7 +160,7 @@ ensure_wm() {
 
 ensure_screen() {
 	local jq_prog
-	if [[ "$screen" ]] && ! wm_msg -rt get_outputs | jq -e --arg screen "$screen" '.[] | select(.name == $screen)'; then
+	if [[ "$screen" ]] && ! wm_msg -rt get_outputs | jq -e --arg screen "$screen" '.[] | select(.name == $screen)' > /dev/null; then
 		debug "Given screen value $screen not found in output list"
 		unset screen
 	fi
@@ -206,24 +200,24 @@ parse_dimensions() {
 	fi
 
 	case "$anchor" in
-		t?) y_pos=$((y_pos + offset_y));;
-		c?) y_pos=$((y_pos + ((screen_height - height) / 2) + offset_y));;
-		b?) y_pos=$((y_pos + screen_height - height + offset_y));;
+		t?) y_pos=$((y_pos));;
+		c?) y_pos=$((y_pos + ((screen_height - height) / 2)));;
+		b?) y_pos=$((y_pos + screen_height - height));;
 	esac
 
 	case "$anchor" in
-		?l) x_pos=$((x_pos + offset_x));;
-		?c) x_pos=$((x_pos + ((screen_width - width) / 2) + offset_x));;
-		?r) x_pos=$((x_pos + screen_width - width + offset_x));;
+		?l) x_pos=$((x_pos));;
+		?c) x_pos=$((x_pos + ((screen_width - width) / 2)));;
+		?r) x_pos=$((x_pos + screen_width - width));;
 	esac
 
 	debug 'Calculated window dimensions are [' "x: $x_pos" "y: $y_pos" "w: $width" "h: $height" ']'
 }
 
 already_running() {
-	local jq_prog
+	local jq_prog focused_workspace
 
-	wm_msg -rt get_marks | jq -e --arg id_mark "$id_mark" 'index($id_mark)?' > /dev/null # No --quiet option?
+	wm_msg -rt get_marks | jq -e --arg id_mark "$id_mark" 'index($id_mark)?' > /dev/null
 	[[ $? == 1 ]] && return 1 # No appropriately marked window; short circuit
 
 	if [[ ! $toggle ]]; then
@@ -231,22 +225,22 @@ already_running() {
 		return 0
 	fi
 
+	focused_workspace=$(wm_msg -rt get_workspaces | jq '.[] | select(.focused == true).id') # UDOCUMENTED: sway-ipc(7) does not document an "id" field
+	debug 'Determined focused workspace as '"$focused_workspace"
+
 	# shellcheck disable=SC2016 # Complains about $var in single quotes
 	jq_prog='
-		# It seems in Sway theres no good way to isolate the scratchpad workspace, I believe this should be infallible
-		# Locate __i3 output
-		first(.nodes[] | select(.name == "__i3" and .type == "output")
-		# Determine scratchpad workspace using special values it has (null on Sway, "__i3" on i3)
-		| recurse(.nodes[]) | select(.name == "__i3_scratch" and (.output == null or .output == "__i3" ))?)
+		# Pick out the focused workspace
+		first(.nodes[].nodes[] | select(.type == "workspace" and .id == ($id_focused | tonumber)))
 		# And recursively search it for an appropriately marked window
 		| .. | select(.marks | index($id_mark))?
 	'
-	if wm_msg -rt get_tree | jq -e --arg id_mark "$id_mark" "$jq_prog" > /dev/null; then
-		debug 'Found window in scratchpad'
-		show_window_in_position
-	else
-		debug 'Window was found, but not in scratchpad; moving to scratchpad'
+	if wm_msg -rt get_tree | jq -e "$jq_prog" --arg id_mark "$id_mark" --arg id_focused "$focused_workspace" > /dev/null; then
+		debug 'Window was found in focused workspace, moving to scratchpad'
 		hide_window
+	else
+		debug 'Window not in focused workspace, showing it'
+		show_window_in_position
 	fi
 	return 0
 }
@@ -254,8 +248,11 @@ already_running() {
 start_and_mark_window() {
 	local event change
 
-	event=$(wm_msg -q -- exec --no-startup-id "$command" && wm_msg -r -t subscribe '[ "window" ]')
-	change="$(jq '.change' <<< "$event")"
+	if ! event=$(wm_msg -q -- exec --no-startup-id "$command" && timeout 2s wm_msg -r -t subscribe '[ "window" ]'); then
+		printf 'Timed out waiting for command to finish: %s' "$command" >&2
+		return 1
+	fi
+	change=$(jq '.change' <<< "$event")
 	if [[ "$change" != '"new"' && "$change" != '"focus"' ]]; then
 		printf 'Got unexpected window event (change = %s, expected "new" or "focus")\n' "$change" >&2
 		return 1
