@@ -25,7 +25,7 @@
 
 # For more information, please refer to <http://unlicense.org/>
 
-VERSION="2.0"
+VERSION="2.1"
 
 print_help() {
 	printf 'Usage: %s [-a <anchor>] [-d <size>] [-p <pos>] [-s <screen>] [-m <edge>] [-w <wm>] [-h] [-t] [-v] [-V] <command>\n' "$script_name"
@@ -55,7 +55,7 @@ print_help() {
 
 main() {
 	local screen_width screen_height offset_x offset_y width height x_pos y_pos \
-	      move command toggle verbose animation_frame_delay=0.01 wm
+	      move command toggle verbose animation_frame_delay=0.01 wm wm_msg
 
 	parse_arguments "$@"
 
@@ -119,10 +119,10 @@ ensure_wm() {
 	local has_swaymsg=no has_i3msg=no sway_running=no i3_running=no
 	case "${wm,,}" in # Make lowercase
 		'') ;; # Continue below
-		*sway*) wm=sway;;
-		*i3*) wm=i3;;
+		*sway*) wm_msg=swaymsg; return;;
+		*i3*) wm_msg=i3-msg; return;;
 		*)
-			printf "Couldn't recognzise wm value \"%s\"; expected sway or i3" "$wm" >&2
+			printf "Couldn't recognise wm value \"%s\"; expected sway or i3" "$wm" >&2
 			exit 1 ;;
 	esac
 
@@ -133,13 +133,13 @@ ensure_wm() {
 		no,no)
 			printf "Neither swaymsg nor i3-msg found in \$PATH. Can't continue." >&2
 			exit 1 ;;
-		yes,no) wm=sway; return ;;
-		no,yes) wm=i3; return ;;
+		yes,no) wm_msg=swaymsg; return ;;
+		no,yes) wm_msg=i3-msg; return ;;
 	esac
 	debug "Both sway and i3 are installed, trying to determine which one is running."
 
 	if [[ ! "$SWAYSOCK" && "$I3SOCK" ]] || ! swaymsg -q; then
-		wm=i3
+		wm_msg=i3-msg
 		return
 	fi
 
@@ -150,17 +150,17 @@ ensure_wm() {
 		no,no)
 			printf "Neither sway nor i3 are running. Can't continue." >&2
 			exit 1 ;;
-		yes,no) wm=sway; return ;;
-		no,yes) wm=i3; return ;;
+		yes,no) wm_msg=swaymsg; return ;;
+		no,yes) wm_msg=i3-msg; return ;;
 	esac
 
 	debug 'Both sway and i3 are running. Defaulting to sway.'
-	wm=sway
+	wm_msg=swaymsg
 }
 
 ensure_screen() {
 	local jq_prog
-	if [[ "$screen" ]] && ! wm_msg -rt get_outputs | jq -e --arg screen "$screen" '.[] | select(.name == $screen)' > /dev/null; then
+	if [[ "$screen" ]] && ! $wm_msg -rt get_outputs | jq -e --arg screen "$screen" '.[] | select(.name == $screen)' > /dev/null; then
 		debug "Given screen value $screen not found in output list"
 		unset screen
 	fi
@@ -170,7 +170,7 @@ ensure_screen() {
 			   first(.[] | select(.focused == true)).name # Sway exposes a focused field
 			// first(.[] | select(.primary == true)).name # Else fallback to primary output
 		'
-		screen=$(wm_msg -rt get_outputs | jq -r "$jq_prog")
+		screen=$($wm_msg -rt get_outputs | jq -r "$jq_prog")
 		debug "Setting screen to focused output $screen"
 	fi
 }
@@ -189,7 +189,7 @@ parse_dimensions() {
 		# And get its dimensions
 		.rect | {width,height,x,y} | values | join(" ")
 	'
-	dimensions=$(wm_msg -rt get_outputs | jq -r --arg screen "$screen" "$jq_prog")
+	dimensions=$($wm_msg -rt get_outputs | jq -r --arg screen "$screen" "$jq_prog")
 	read -r screen_width screen_height offset_x offset_y <<< "$dimensions"
 
 	if [[ "$width" =~ %$ ]]; then
@@ -217,7 +217,7 @@ parse_dimensions() {
 already_running() {
 	local jq_prog focused_workspace
 
-	wm_msg -rt get_marks | jq -e --arg id_mark "$id_mark" 'index($id_mark)?' > /dev/null
+	$wm_msg -rt get_marks | jq -e --arg id_mark "$id_mark" 'index($id_mark)?' > /dev/null
 	[[ $? == 1 ]] && return 1 # No appropriately marked window; short circuit
 
 	if [[ ! $toggle ]]; then
@@ -225,7 +225,7 @@ already_running() {
 		return 0
 	fi
 
-	focused_workspace=$(wm_msg -rt get_workspaces | jq '.[] | select(.focused == true).id') # UNDOCUMENTED: sway-ipc(7) does not document an "id" field
+	focused_workspace=$($wm_msg -rt get_workspaces | jq '.[] | select(.focused == true).id') # UNDOCUMENTED: sway-ipc(7) does not document an "id" field
 	debug 'Determined focused workspace as '"$focused_workspace"
 
 	# shellcheck disable=SC2016 # Complains about $var in single quotes
@@ -235,7 +235,7 @@ already_running() {
 		# And recursively search it for an appropriately marked window
 		| .. | select(.marks | index($id_mark))?
 	'
-	if wm_msg -rt get_tree | jq -e "$jq_prog" --arg id_mark "$id_mark" --arg id_focused "$focused_workspace" > /dev/null; then
+	if $wm_msg -rt get_tree | jq -e "$jq_prog" --arg id_mark "$id_mark" --arg id_focused "$focused_workspace" > /dev/null; then
 		debug 'Window was found in focused workspace, moving to scratchpad'
 		hide_window
 	else
@@ -248,7 +248,7 @@ already_running() {
 start_and_mark_window() {
 	local event change
 
-	if ! event=$(wm_msg -q -- exec --no-startup-id "$command" && timeout 2s wm_msg -r -t subscribe '[ "window" ]'); then
+	if ! event=$($wm_msg -q -- exec --no-startup-id "$command" && timeout 2s "$wm_msg" -r -t subscribe '[ "window" ]'); then
 		printf 'Timed out waiting for command to finish: %s' "$command" >&2
 		return 1
 	fi
@@ -257,7 +257,7 @@ start_and_mark_window() {
 		printf 'Got unexpected window event (change = %s, expected "new" or "focus")\n' "$change" >&2
 		return 1
 	fi
-	wm_msg -q "mark --add \"$id_mark\""
+	$wm_msg -q "mark --add \"$id_mark\""
 	debug "Marked new window with identifying mark $id_mark"
 
 	show_window_in_position
@@ -266,7 +266,7 @@ start_and_mark_window() {
 show_window_in_position() {
 	if [[ ! "$move" ]]; then
 		debug 'Moving to scratchpad, showing and resizing'
-		wm_msg -q -- "[con_mark=\"$id_mark\"] move to scratchpad, scratchpad show, move position $x_pos px $y_pos px, resize set $width px $height px"
+		$wm_msg -q -- "[con_mark=\"$id_mark\"] move to scratchpad, scratchpad show, move position $x_pos px $y_pos px, resize set $width px $height px"
 		return 0
 	fi
 
@@ -281,13 +281,13 @@ show_window_in_position() {
 		l) x=$((offset_x - width + 1));         x_inc=$(((x_pos - x) / 4));;
 		r) x=$((offset_x + screen_width - 1));  x_inc=$(((x_pos - x) / 4));;
 	esac
-	wm_msg -q -- "[con_mark=\"$id_mark\"] move to scratchpad, scratchpad show, move position $x px $y px, resize set $width px $height px"
+	$wm_msg -q -- "[con_mark=\"$id_mark\"] move to scratchpad, scratchpad show, move position $x px $y px, resize set $width px $height px"
 	debug 'Starting show animation'
 	while [[ ($x_inc -lt 0 && $x -gt $x_end) || ($x_inc -gt 0 && $x -lt $x_end) || ($y_inc -lt 0 && $y -gt $y_end) || ($y_inc -gt 0 && $y -lt $y_end) ]]; do
 		animate
 	done
 	debug 'Animation completed'
-	wm_msg -q -- "[con_mark=\"$id_mark\"] move position $x_pos px $y_pos px"
+	$wm_msg -q -- "[con_mark=\"$id_mark\"] move position $x_pos px $y_pos px"
 }
 
 hide_window() {
@@ -311,12 +311,12 @@ hide_window() {
 		debug 'Animation completed'
 	fi
 
-	wm_msg -q -- "[con_mark=\"$id_mark\"] move to scratchpad"
+	$wm_msg -q -- "[con_mark=\"$id_mark\"] move to scratchpad"
 }
 
 animate() {
 	debug 'Moving to [' "$x" "$y" '] with increment [' "$x_inc" "$y_inc" ']'
-	wm_msg -q -- "[con_mark=\"$id_mark\"] move position $x px $y px"
+	$wm_msg -q -- "[con_mark=\"$id_mark\"] move position $x px $y px"
 	y=$((y + y_inc))
 	x=$((x + x_inc))
 	if [[ ($x -lt $x_pos && $x_inc -le 0) || ($x -gt $x_pos && $x_inc -ge 0) ]]; then
@@ -332,17 +332,6 @@ animate() {
 	sleep "$animation_frame_delay"
 }
 
-wm_msg() {
-	if [[ "$wm" =~ sway ]]; then
-		swaymsg "$@"
-	elif [[ "$wm" =~ i3 ]]; then
-		i3-msg "$@"
-	else
-		printf "Impossible state reached; wm=%s" "$wm" >&2
-		exit 1
-	fi
-}
-
 debug() {
 	if [[ "$verbose" ]]; then
 		printf '%s\n' "$*"
@@ -351,5 +340,6 @@ debug() {
 
 [[ ! "$BASH_LOADABLES_PATH" ]] && BASH_LOADABLES_PATH=$(pkg-config bash --variable=loadablesdir 2>/dev/null)
 enable -f sleep sleep
+
 
 main "$@"
