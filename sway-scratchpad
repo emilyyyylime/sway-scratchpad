@@ -25,7 +25,7 @@
 
 # For more information, please refer to <http://unlicense.org/>
 
-VERSION="2.1"
+VERSION="2.2"
 
 print_help() {
 	printf 'Usage: %s [-a <anchor>] [-d <size>] [-p <pos>] [-s <screen>] [-m <edge>] [-w <wm>] [-h] [-t] [-v] [-V] <command>\n' "$script_name"
@@ -287,7 +287,7 @@ show_window_in_position() {
 		animate
 	done
 	debug 'Animation completed'
-	$wm_msg -q -- "[con_mark=\"$id_mark\"] move position $x_pos px $y_pos px"
+	$wm_msg -q -- "[con_mark=\"$id_mark\"] move position $x_pos px $y_pos px, resize set $width px $height px"
 }
 
 hide_window() {
@@ -316,7 +316,9 @@ hide_window() {
 
 animate() {
 	debug 'Moving to [' "$x" "$y" '] with increment [' "$x_inc" "$y_inc" ']'
-	$wm_msg -q -- "[con_mark=\"$id_mark\"] move position $x px $y px"
+	# Sometimes resize fails initially if the window is still opening,
+	# so just resize on every step to ensure minimal screen tearing.
+	$wm_msg -q -- "[con_mark=\"$id_mark\"] move position $x px $y px, resize set $width px $height px"
 	y=$((y + y_inc))
 	x=$((x + x_inc))
 	if [[ ($x -lt $x_pos && $x_inc -le 0) || ($x -gt $x_pos && $x_inc -ge 0) ]]; then
