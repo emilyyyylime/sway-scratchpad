@@ -25,7 +25,7 @@
 
 # For more information, please refer to <http://unlicense.org/>
 
-VERSION="2.2"
+VERSION="2.3"
 
 print_help() {
 	printf 'Usage: %s [-a <anchor>] [-d <size>] [-p <pos>] [-s <screen>] [-m <edge>] [-w <wm>] [-h] [-t] [-v] [-V] <command>\n' "$script_name"
@@ -42,11 +42,11 @@ print_help() {
 	printf ' -m <edge>     Animates the movement to target position from specified edge.\n'
 	printf '               Valid values are top, left, bottom, right / t, l, b, r.\n'
 	printf ' -p <pos>      Position of window on pixels, in X,Y format. Negative values can be used as well. Default is 0,0.\n'
-	printf ' -s <screen>   Screen identifier, as listed in xrandr. Falls back to focused screen (sway) or primary screen (i3).\n'
+	printf ' -s <screen>   Screen identifier, as listed in xrandr. Falls back to focused screen (sway/scroll) or primary screen (i3).\n'
 	printf ' -t            Toggles the window.\n'
 	printf ' -v            Verbose, for debugging.\n'
 	printf ' -V            Print version information.\n'
-	printf ' -w [sway|i3]  Which window manager to use.\n'
+	printf ' -w [sway|scroll|i3]  Which window manager to use.\n'
 	printf ' <command>     Command to execute in order to open window, if it doesn%ct exist.\n' \'
 	printf '\nExample:\n'
 	printf ' # Popdown seethrough terminal (kitty)\n'
@@ -116,42 +116,51 @@ ensure_anchors() {
 }
 
 ensure_wm() {
-	local has_swaymsg=no has_i3msg=no sway_running=no i3_running=no
+	local has_swaymsg=no has_i3msg=no has_scrollmsg=no sway_running=no i3_running=no scroll_running=no
 	case "${wm,,}" in # Make lowercase
 		'') ;; # Continue below
 		*sway*) wm_msg=swaymsg; return;;
 		*i3*) wm_msg=i3-msg; return;;
+		*scroll*) wm_msg=scrollmsg; return;;
 		*)
-			printf "Couldn't recognise wm value \"%s\"; expected sway or i3" "$wm" >&2
+			printf "Couldn't recognise wm value \"%s\"; expected sway, scroll, or i3" "$wm" >&2
 			exit 1 ;;
 	esac
 
 	which swaymsg &> /dev/null && has_swaymsg=yes
+	which scrollmsg  &> /dev/null && has_scrollmsg=yes
 	which i3-msg  &> /dev/null && has_i3msg=yes
 
-	case $has_swaymsg,$has_i3msg in
-		no,no)
-			printf "Neither swaymsg nor i3-msg found in \$PATH. Can't continue." >&2
-			exit 1 ;;
-		yes,no) wm_msg=swaymsg; return ;;
-		no,yes) wm_msg=i3-msg; return ;;
-	esac
-	debug "Both sway and i3 are installed, trying to determine which one is running."
 
+	case $has_swaymsg,$has_scrollmsg,$has_i3msg in
+		no,no,no)
+			printf "Neither swaymsg,scrollmsg nor i3-msg found in \$PATH. Can't continue." >&2
+			exit 1 ;;
+		yes,no,no) wm_msg=swaymsg; return ;;
+		no,yes,no) wm_msg=scrollmsg;return;;
+		no,no,yes) wm_msg=i3-msg; return ;;
+	esac
+	debug "Sway, Scroll, and i3 are installed, trying to determine which one is running."
+
+
+#FIXME: this should really be expanded to include scroll
+#scroll, being based on sway, also sets teh swaysock enviroment variable, and I am booth to lazy and to bad at bash to add a check for the equivalent myself
 	if [[ ! "$SWAYSOCK" && "$I3SOCK" ]] || ! swaymsg -q; then
 		wm_msg=i3-msg
 		return
 	fi
 
 	pgrep -x 'sway' &> /dev/null && sway_running=yes
+	pgrep -x 'scroll' &> /dev/null && scroll_running=yes
 	pgrep -x 'i3'   &> /dev/null && i3_running=yes
 
-	case $sway_running,$i3_running in
-		no,no)
+	case $sway_running,$scroll_running,$i3_running in
+		no,no,no)
 			printf "Neither sway nor i3 are running. Can't continue." >&2
 			exit 1 ;;
-		yes,no) wm_msg=swaymsg; return ;;
-		no,yes) wm_msg=i3-msg; return ;;
+		yes,no,no) wm_msg=swaymsg; return ;;
+		no,yes,no) wm_msg=scrollmsg; return ;;
+		no,no,yes) wm_msg=i3-msg; return ;;
 	esac
 
 	debug 'Both sway and i3 are running. Defaulting to sway.'
